@@ -11,7 +11,7 @@ import {
   Sparkles,
   CircleDashed,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 const scans = [
   {
@@ -53,139 +53,6 @@ const scans = [
   },
 ];
 
-function makeMockResult(type, input) {
-  const text = (input || "").toLowerCase();
-
-  let score = 71;
-  let verdict = "Needs Verification";
-  let confidence = "Medium";
-  let keyInsight =
-    "The input shows some visible trust signals, but not enough verified depth to justify blind confidence.";
-  let recommendedAction =
-    "Verify official links, recent activity, and ownership details before taking action.";
-  let positives = [
-    "Public-facing identity is visible",
-    "Use case is understandable from the input",
-    "There are some surface-level trust signals",
-  ];
-  let risks = [
-    "Key claims are not yet independently verified",
-    "Historical context is still limited",
-    "Further wallet, contract, or source review is needed",
-  ];
-  let nextSteps = [
-    "Verify official links and source of truth",
-    "Check wallet, contract, or team history",
-    "Confirm whether liquidity, activity, or traction is real",
-  ];
-  let summary =
-    "SignalPass found some encouraging indicators, but not enough proof to treat this as low risk without further verification.";
-
-  if (
-    text.includes("btc") ||
-    text.includes("bitcoin") ||
-    text.includes("stellar") ||
-    text.includes("xlm")
-  ) {
-    score = 88;
-    verdict = "Low Risk";
-    confidence = "High";
-    keyInsight =
-      "This input has stronger public legitimacy and lower ambiguity than average, which improves baseline trust.";
-    recommendedAction =
-      "Confirm the exact asset or source, then review current market context before acting.";
-    positives = [
-      "Strong public awareness and discoverability",
-      "Clear market identity",
-      "Lower ambiguity around the asset being referenced",
-    ];
-    risks = [
-      "Market volatility still applies",
-      "Execution risk depends on exact context and timing",
-      "Users should still verify the exact asset or source",
-    ];
-    nextSteps = [
-      "Confirm the exact asset, wallet, or official link",
-      "Check recent ecosystem context before acting",
-      "Use this result as support, not as your only signal",
-    ];
-    summary =
-      "This input shows stronger trust indicators than average, but SignalPass still recommends a final verification pass before action.";
-  }
-
-  if (
-    text.includes("meme") ||
-    text.includes("pump") ||
-    text.includes("airdrop") ||
-    text.includes("guaranteed") ||
-    text.includes("100x")
-  ) {
-    score = 34;
-    verdict = "High Risk";
-    confidence = "Medium";
-    keyInsight =
-      "The language around this input looks more hype-driven than proof-driven, which is a classic risk signal.";
-    recommendedAction =
-      "Pause and independently verify ownership, utility, and source credibility before any interaction.";
-    positives = [
-      "High attention potential",
-      "Narrative strength may attract fast interest",
-    ];
-    risks = [
-      "Speculative language detected",
-      "Hype appears stronger than proof",
-      "Scam, dump, or manipulation risk is elevated",
-    ];
-    nextSteps = [
-      "Do not act based on urgency or hype alone",
-      "Verify ownership, source, and utility claims",
-      "Check whether the claims are independently provable",
-    ];
-    summary =
-      "This input carries multiple classic danger signals. Treat it as high risk unless stronger proof appears.";
-  }
-
-  if (
-    text.includes("rug") ||
-    text.includes("scam") ||
-    text.includes("fake") ||
-    text.includes("suspicious")
-  ) {
-    score = 22;
-    verdict = "High Risk";
-    confidence = "High";
-    keyInsight =
-      "Explicit suspicion markers are present, and the quality of trust signals looks very weak.";
-    recommendedAction =
-      "Do not proceed until links, wallet history, ownership, and community legitimacy are all cross-checked.";
-    positives = ["User awareness is already elevated"];
-    risks = [
-      "Explicit suspicion or scam language detected",
-      "Trust signal quality is very weak",
-      "Manual verification is critical before any interaction",
-    ];
-    nextSteps = [
-      "Pause before taking action",
-      "Cross-check all links and ownership data",
-      "Verify contract, wallet, and community legitimacy",
-    ];
-    summary =
-      "SignalPass flags this input as highly risky. Extra caution is strongly advised before any action.";
-  }
-
-  return {
-    score,
-    verdict,
-    confidence,
-    keyInsight,
-    recommendedAction,
-    positives,
-    risks,
-    nextSteps,
-    summary,
-  };
-}
-
 function getVerdictTone(verdict) {
   if (verdict === "Low Risk") {
     return {
@@ -207,25 +74,77 @@ function getVerdictTone(verdict) {
   };
 }
 
+const emptyResult = {
+  score: 0,
+  verdict: "Needs Verification",
+  confidence: "Medium",
+  keyInsight: "",
+  recommendedAction: "",
+  positives: [],
+  risks: [],
+  nextSteps: [],
+  summary: "",
+};
+
 export default function App() {
   const [step, setStep] = useState("home");
   const [selectedScan, setSelectedScan] = useState(scans[0]);
   const [query, setQuery] = useState("");
   const [paying, setPaying] = useState(false);
-
-  const result = useMemo(
-    () => makeMockResult(selectedScan.title, query),
-    [selectedScan, query]
-  );
+  const [analyzing, setAnalyzing] = useState(false);
+  const [result, setResult] = useState(emptyResult);
+  const [error, setError] = useState("");
 
   const verdictTone = getVerdictTone(result.verdict);
 
+  const handleAnalyze = async () => {
+    setAnalyzing(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          scanType: selectedScan.title,
+          input: query,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Analysis failed");
+      }
+
+      setResult({
+        score: data.score ?? 0,
+        verdict: data.verdict ?? "Needs Verification",
+        confidence: data.confidence ?? "Medium",
+        keyInsight: data.keyInsight ?? "",
+        recommendedAction: data.recommendedAction ?? "",
+        positives: Array.isArray(data.positives) ? data.positives : [],
+        risks: Array.isArray(data.risks) ? data.risks : [],
+        nextSteps: Array.isArray(data.nextSteps) ? data.nextSteps : [],
+        summary: data.summary ?? "",
+      });
+
+      setStep("result");
+    } catch (err) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   const handlePay = () => {
     setPaying(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       setPaying(false);
-      setStep("result");
-    }, 1800);
+      await handleAnalyze();
+    }, 1500);
   };
 
   const resetFlow = () => {
@@ -233,6 +152,9 @@ export default function App() {
     setSelectedScan(scans[0]);
     setQuery("");
     setPaying(false);
+    setAnalyzing(false);
+    setResult(emptyResult);
+    setError("");
   };
 
   return (
@@ -279,18 +201,18 @@ export default function App() {
           <div className="grid three">
             <div className="card">
               <Search size={20} />
-              <h3>Choose a scan</h3>
+              <h3>Choose what to verify</h3>
               <p>Pick a token, wallet, or project trust check.</p>
             </div>
             <div className="card">
               <Wallet size={20} />
-              <h3>Pay in XLM</h3>
+              <h3>Unlock a scan with XLM</h3>
               <p>Simple pay-per-use access instead of a subscription wall.</p>
             </div>
             <div className="card">
               <ShieldCheck size={20} />
-              <h3>Get a verdict</h3>
-              <p>Score, risk signals, green flags, and what to verify next.</p>
+              <h3>Get a structured risk verdict</h3>
+              <p>Score, insight, risks, green flags, and next actions.</p>
             </div>
           </div>
         </main>
@@ -398,15 +320,9 @@ export default function App() {
           </div>
 
           <div className="card payment-card">
-            <p>
-              <strong>Service:</strong> {selectedScan.title}
-            </p>
-            <p>
-              <strong>Input:</strong> {query}
-            </p>
-            <p>
-              <strong>Amount:</strong> {selectedScan.price}
-            </p>
+            <p><strong>Service:</strong> {selectedScan.title}</p>
+            <p><strong>Input:</strong> {query}</p>
+            <p><strong>Amount:</strong> {selectedScan.price}</p>
             <p className="muted">
               This is a simulated Stellar payment step for the MVP demo.
             </p>
@@ -419,11 +335,17 @@ export default function App() {
             <button
               className="primary-btn"
               onClick={handlePay}
-              disabled={paying}
+              disabled={paying || analyzing}
             >
-              {paying ? "Processing on Stellar..." : "Pay with XLM"}
+              {paying
+                ? "Processing on Stellar..."
+                : analyzing
+                ? "Running analysis..."
+                : "Pay with XLM"}
             </button>
           </div>
+
+          {error && <p className="error-text">{error}</p>}
         </main>
       )}
 

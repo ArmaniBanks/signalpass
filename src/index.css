@@ -378,3 +378,7 @@ li + li {
   margin: 8px 0 0;
   color: #d7dde4;
 }
+.error-text {
+  margin-top: 16px;
+  color: #ffb4b4;
+}
