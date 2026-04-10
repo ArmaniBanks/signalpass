@@ -12,6 +12,7 @@ import {
   CircleDashed,
 } from "lucide-react";
 import { useState } from "react";
+import { connectFreighterWallet, sendTestnetPayment } from "./stellar";
 
 const scans = [
   {
@@ -94,8 +95,27 @@ export default function App() {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(emptyResult);
   const [error, setError] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
+  const [paymentHash, setPaymentHash] = useState("");
+  const [connectingWallet, setConnectingWallet] = useState(false);
 
   const verdictTone = getVerdictTone(result.verdict);
+  const RECEIVER_ADDRESS =
+    "GCOYT6QV2BRTMEBJ4NTOX2MOS42N7Q7HHYKFJ7YWGCLREJ72QXTCFMIW";
+
+  const handleConnectWallet = async () => {
+    setConnectingWallet(true);
+    setError("");
+
+    try {
+      const address = await connectFreighterWallet();
+      setWalletAddress(address);
+    } catch (err) {
+      setError(err.message || "Failed to connect wallet");
+    } finally {
+      setConnectingWallet(false);
+    }
+  };
 
   const handleAnalyze = async () => {
     setAnalyzing(true);
@@ -113,7 +133,14 @@ export default function App() {
         }),
       });
 
-      const data = await res.json();
+      const raw = await res.text();
+      let data = {};
+
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error("API did not return valid JSON.");
+      }
 
       if (!res.ok) {
         throw new Error(data?.error || "Analysis failed");
@@ -139,12 +166,31 @@ export default function App() {
     }
   };
 
-  const handlePay = () => {
+  const handlePay = async () => {
+    if (!walletAddress) {
+      setError("Connect your Freighter wallet first.");
+      return;
+    }
+
     setPaying(true);
-    setTimeout(async () => {
-      setPaying(false);
+    setError("");
+
+    try {
+      const numericAmount = parseFloat(selectedScan.price);
+
+      const paymentResult = await sendTestnetPayment({
+        senderPublicKey: walletAddress,
+        destination: RECEIVER_ADDRESS,
+        amount: numericAmount,
+      });
+
+      setPaymentHash(paymentResult.hash || "");
       await handleAnalyze();
-    }, 1500);
+    } catch (err) {
+      setError(err.message || "Payment failed");
+    } finally {
+      setPaying(false);
+    }
   };
 
   const resetFlow = () => {
@@ -155,6 +201,7 @@ export default function App() {
     setAnalyzing(false);
     setResult(emptyResult);
     setError("");
+    setPaymentHash("");
   };
 
   return (
@@ -320,12 +367,42 @@ export default function App() {
           </div>
 
           <div className="card payment-card">
-            <p><strong>Service:</strong> {selectedScan.title}</p>
-            <p><strong>Input:</strong> {query}</p>
-            <p><strong>Amount:</strong> {selectedScan.price}</p>
-            <p className="muted">
-              This is a simulated Stellar payment step for the MVP demo.
+            <p>
+              <strong>Service:</strong> {selectedScan.title}
             </p>
+            <p>
+              <strong>Input:</strong> {query}
+            </p>
+            <p>
+              <strong>Amount:</strong> {selectedScan.price}
+            </p>
+            <p className="muted">
+              This is a Stellar Testnet payment step for the MVP.
+            </p>
+          </div>
+
+          <div className="card payment-card" style={{ marginTop: "16px" }}>
+            <p>
+              <strong>Wallet:</strong>{" "}
+              {walletAddress ? walletAddress : "Not connected"}
+            </p>
+
+            {!walletAddress && (
+              <button
+                className="primary-btn"
+                onClick={handleConnectWallet}
+                disabled={connectingWallet}
+                style={{ marginTop: "12px" }}
+              >
+                {connectingWallet ? "Connecting..." : "Connect Freighter"}
+              </button>
+            )}
+
+            {walletAddress && (
+              <p className="muted" style={{ marginTop: "12px" }}>
+                Freighter connected on Stellar Testnet.
+              </p>
+            )}
           </div>
 
           <div className="footer-actions">
@@ -351,6 +428,15 @@ export default function App() {
 
       {step === "result" && (
         <main className="container">
+          {paymentHash && (
+            <div className="card" style={{ marginBottom: "20px" }}>
+              <h3>Payment confirmed on Stellar Testnet</h3>
+              <p className="muted" style={{ wordBreak: "break-all" }}>
+                Transaction Hash: {paymentHash}
+              </p>
+            </div>
+          )}
+
           <div className="result-header">
             <div>
               <div className="badge">Scan Complete</div>
